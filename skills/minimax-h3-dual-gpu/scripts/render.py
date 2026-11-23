@@ -38,6 +38,13 @@ def api(port, path, payload=None):
         raise RuntimeError(error.read().decode(errors="replace")) from error
 
 
+def export_clip(source, video):
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(source),
+                    "-vf", "crop=1280:720:0:8", "-t", "5", "-c:v", "libx264",
+                    "-crf", "17", "-preset", "fast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-movflags", "+faststart", str(video)], check=True)
+
+
 def render(args):
     graph = json.loads(args.workflow.read_text(encoding="utf-8-sig"))
     if tuple(graph["5"]["inputs"][k] for k in ("width", "height", "length")) != (1280, 736, 124):
@@ -81,16 +88,14 @@ def render(args):
         if item["status"]["status_str"] != "success":
             errors = [v.get("exception_message") for k, v in item["status"]["messages"]
                       if k == "execution_error"]
+            receipt.update(status="execution_failed", errors=errors)
             raise RuntimeError(f"ComfyUI job failed: {errors}")
         media = item["outputs"]["14"]["images"][0]
         source = (root / media.get("subfolder", "") / media["filename"]).resolve(strict=True)
         if not source.is_relative_to(root):
             raise ValueError("Source outside the configured output directory")
         video = root / (stem + ".mp4")
-        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(source),
-                        "-vf", "crop=1280:720:0:8", "-t", "5", "-c:v", "libx264",
-                        "-crf", "17", "-preset", "fast", "-pix_fmt", "yuv420p",
-                        "-c:a", "aac", "-movflags", "+faststart", str(video)], check=True)
+        export_clip(source, video)
         receipt.update(status="rendered", video=video.name, wall_s=round(time.monotonic()-start, 2))
     finally:
         gpu.terminate()
