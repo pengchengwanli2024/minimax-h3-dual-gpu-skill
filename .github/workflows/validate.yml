@@ -1,0 +1,32 @@
+name: Validate skill package
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check runner and 720p workflow
+        shell: python
+        run: |
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+          skill = Path("skills/minimax-h3-dual-gpu")
+          subprocess.run([sys.executable, str(skill/"scripts/render.py"), "--help"], check=True)
+          graph = json.loads((skill/"workflows/720p.json").read_text(encoding="utf-8"))
+          for node in graph.values():
+              for value in node["inputs"].values():
+                  if isinstance(value, list):
+                      assert value[0] in graph and isinstance(value[1], int)
+          assert graph["9"]["inputs"]["model"] == ["16", 0]
+          assert graph["16"]["class_type"] == "H3MultiStream"
+          assert graph["16"]["inputs"]["enabled"]
+          assert graph["8"]["inputs"]["steps"] == 8
+          assert graph["6"]["inputs"]["noise_seed"] == 260806
+          assert graph["13"]["inputs"]["fps"] == 24
